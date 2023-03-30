@@ -161,5 +161,5 @@ def total_cable_length(df):
     """
     if 'distance' not in df.get_column_names():
         get_distances(df)
-    return sum(df['diustance'])
+    return sum(df['distance'])
 
