@@ -1,26 +1,26 @@
 import numpy as np
 import vaex as vx
 
-def read_swc(file_path, distances = True, classify_nodes = True):
+def read_swc(file_path, add_distances = True, add_types = True):
     """
     Read in swc file to a vaex DataFrame.
 
     Paremeters
     ----------
 
-    file_path:      str
+    file_path:          str
         file path string
 
-    distances:      bool
+    add_distances:      bool
         If True (default), distance from child to parent will be calculated, add paren x,y,z, and distance columns to the returned data frame
 
-    classify_nodes: bool
+    add_types:          bool
         if True (default) existing node classification in the swc file will be overwritten, and nodes will be re-classified as root = 1, branch = 5, leaf = 6, other = 0
 
     Returns
     -------
 
-    df              vaex.DataFrame
+    df                  vaex.DataFrame
         
     
 
@@ -40,11 +40,13 @@ def read_swc(file_path, distances = True, classify_nodes = True):
     if not np.unique(df.node_id.values).size == len(df.node_id.values):
         raise AttributeError('Duplicate Node Ids found')
 
-    if distances == True:
+    if add_types == True:
+        df = classify_nodes(df)
+
+    if add_distances == True:
         df = get_distances(df)
     
-    if classify_nodes == True:
-        df = classify_nodes(df)
+
 
     return df
 
@@ -78,9 +80,10 @@ def classify_nodes(df, overwrite = True):
     # root
     r = df[df.parent_id.isin(np.setdiff1d(df.parent_id.values,df.node_id.values))].node_id.values
     # if the parent of the root node is not -1, update it
-    if r != -1:
-        df['parent_id'] = df.func.where(df.parent_id.isin(r),-1,df.parent_id)
+    if df[df.node_id == r].parent_id.values != -1:
+        df['parent_id'] = df.func.where(df.node_id.isin(r),-1,df.parent_id)
     df['type']= df.func.where(df.node_id.isin(r),1,df.type)
+
 
     # branches
     b = np.sort(df.parent_id.values)
@@ -107,13 +110,13 @@ def get_distances(df):
         original DataFrame with added node distances and parent coordinates.
 
     """
-    # root
-    r = df[df.parent_id.isin(np.setdiff1d(df.parent_id.values,df.node_id.values))].node_id.values
+    # root parent
+    rp = df[df.parent_id.isin(np.setdiff1d(df.parent_id.values,df.node_id.values))].parent_id.values[0]
     # add parent coordinates
 
-    df['px'] = np.array([df[df.node_id == p]['x'].values[0] if p!= r else df[df.node_id == c]['x'].values[0] for c,p in df['node_id','parent_id'].values])
-    df['py'] = np.array([df[df.node_id == p]['y'].values[0] if p!= r else df[df.node_id == c]['y'].values[0] for c,p in df['node_id','parent_id'].values])
-    df['pz'] = np.array([df[df.node_id == p]['z'].values[0] if p!= r else df[df.node_id == c]['z'].values[0] for c,p in df['node_id','parent_id'].values])
+    df['px'] = np.array([df[df.node_id == p]['x'].values[0] if p!= rp else df[df.node_id == c]['x'].values[0] for c,p in df['node_id','parent_id'].values])
+    df['py'] = np.array([df[df.node_id == p]['y'].values[0] if p!= rp else df[df.node_id == c]['y'].values[0] for c,p in df['node_id','parent_id'].values])
+    df['pz'] = np.array([df[df.node_id == p]['z'].values[0] if p!= rp else df[df.node_id == c]['z'].values[0] for c,p in df['node_id','parent_id'].values])
     # add distances
     df['distance'] = np.linalg.norm((df.x - df.px,df.y - df.py,df.z - df.pz))  
     
