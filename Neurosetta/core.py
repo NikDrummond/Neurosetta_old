@@ -1,11 +1,102 @@
 import numpy as np
 import vaex as vx
 import graph_tool.all as gt
+import os
 
 
+
+class Neuron_Tree():
+    """
+    Core Neuron tree class
+    """
+
+    __slots__ = ["name","node_table","graph"]
+
+    def __init__(self, node_table, name = None, graph = None):
+
+        # type checks
+
+        # add name
+        if name is None:
+            self.name = None
+        else:
+            assert isinstance(name,str), "Provided neuron name is not a string"
+            self.name = name
+        
+        # add node table
+        self.node_table = node_table
+
+        # add / generate graph
+        if graph is None:
+            self.graph = None
+        else:
+            assert isinstance(graph,gt.Graph), "Provided graph is not a Graph-Tool graph"
+            self.graph = graph
     
+    def classify_nodes(self, overwrite = True):
+        self.node_table = classify_nodes(self.node_table, overwrite = overwrite)
+    
+    def add_distance(self):
+        if 'distance' not in self.node_table.column_names:
+            self.node_table = get_distances(self.node_table)
+        else:
+            raise ValueError('distances column already exists')
+    
+    def add_graph(self, include_distance = False):
+        if self.graph is None:
+            self.graph = _create_graph(self.node_table, include_distance=include_distance)
+        else:
+            raise ValueError('Graph already exists for this Neuron')
+        
+    def count_nodes(self):
+        return _count_nodes(self.node_table)
 
-def read_swc(file_path, add_distances = False, add_types = True):
+    def count_branch_nodes(self):
+        return _count_branch_nodes(self.node_table)
+
+    def get_branch_ids(self):
+        return _get_branch_nodes(self.node_table)
+
+    def count_end_nodes(self):
+        return _count_end_nodes(self.node_table)
+
+    def get_end_ids(self):
+        return _get_end_nodes(self.node_table)
+
+    def count_segments(self):
+        return _count_segments(self.node_table)
+
+    def total_cable(self):
+        return _total_cable_length(self.node_table)
+    
+    def get_coordinates(self,cols = None):
+        if cols is None:
+            return _get_cols(self.node_table,['x','y','z'])
+        else:
+            return _get_cols(self.node_table,cols)
+
+def read_swc(file_path, 
+             add_distances = False, 
+             add_types = True, 
+             generate_graph = False):
+    """
+    Generate neuron from swc
+    """
+    df = _vaex_from_swc(file_path,
+                         add_distances=add_distances,
+                         add_types=add_types)
+    
+    if generate_graph == True:
+        g = _create_graph(df, include_distance=add_distances)
+    else:
+        g = None
+
+    name = os.path.splitext(os.path.basename(file_path))[0]
+    
+    return Neuron_Tree(name = name,node_table = df, graph=g)
+
+
+def _vaex_from_swc(file_path, add_distances = False, add_types = True):
     """
     Read in swc file to a vaex DataFrame.
 
@@ -122,43 +213,43 @@ def get_distances(df):
     
     return df
 
-def count_nodes(df):
+def _count_nodes(df):
     """
     Returns the number of nodes in the neuron
     """
     return len(df)
 
-def count_branch_nodes(df):
+def _count_branch_nodes(df):
     """
     Returns the number of branch nodes
     """
     return len(df[df.type == 5])
 
-def get_branch_nodes(df):
+def _get_branch_nodes(df):
     """
     returns the node id of branch nodes
     """
     return df[df.type == 5]['node_id'].values
 
-def count_end_nodes(df):
+def _count_end_nodes(df):
     """
     returns the number of end nodes
     """
     return len(df[df.type == 6])
 
-def get_end_ndoes(df):
+def _get_end_nodes(df):
     """
     returns the node ids of end nodes
     """
     return df[df.type == 6]['node_id'].values
 
-def count_segments(df):
+def _count_segments(df):
     """
     returns the number of segemnts within the neuron
     """
-    return count_branch_nodes(df) + count_end_nodes(df)
+    return _count_branch_nodes(df) + _count_end_nodes(df)
 
-def total_cable_length(df):
+def _total_cable_length(df):
     """
     Returns the total cable length of the neuron
     """
@@ -166,7 +257,16 @@ def total_cable_length(df):
         get_distances(df)
     return np.sum(df['distance'].values)
 
-def create_graph(df, include_distance = False):
+def _get_cols(df,cols = None):
+    """
+    returns np.array of specified columns in node table
+    """
+    if cols is None:
+        raise AttributeError('please provide a list of columns you wish to return')
+    else:
+        return df[cols].values
+
+def _create_graph(df, include_distance = False):
     """
     Creates a graph-tool graph from vaex data frame neuron representation
     """
@@ -204,3 +304,4 @@ def create_graph(df, include_distance = False):
     g.vp['coordinates'] = vprop_coord
 
     return g
+
