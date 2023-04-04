@@ -1,7 +1,11 @@
 import numpy as np
 import vaex as vx
+import graph_tool.all as gt
 
-def read_swc(file_path, add_distances = True, add_types = True):
+
+    
+
+def read_swc(file_path, add_distances = False, add_types = True):
     """
     Read in swc file to a vaex DataFrame.
 
@@ -21,9 +25,6 @@ def read_swc(file_path, add_distances = True, add_types = True):
     -------
 
     df                  vaex.DataFrame
-        
-    
-
     """
     df = vx.read_csv(file_path, 
               names = ['node_id','type','x','y','z','radius','parent_id'],
@@ -113,7 +114,6 @@ def get_distances(df):
     # root parent
     rp = df[df.parent_id.isin(np.setdiff1d(df.parent_id.values,df.node_id.values))].parent_id.values[0]
     # add parent coordinates
-
     df['px'] = np.array([df[df.node_id == p]['x'].values[0] if p!= rp else df[df.node_id == c]['x'].values[0] for c,p in df['node_id','parent_id'].values])
     df['py'] = np.array([df[df.node_id == p]['y'].values[0] if p!= rp else df[df.node_id == c]['y'].values[0] for c,p in df['node_id','parent_id'].values])
     df['pz'] = np.array([df[df.node_id == p]['z'].values[0] if p!= rp else df[df.node_id == c]['z'].values[0] for c,p in df['node_id','parent_id'].values])
@@ -124,45 +124,83 @@ def get_distances(df):
 
 def count_nodes(df):
     """
-    
+    Returns the number of nodes in the neuron
     """
     return len(df)
 
 def count_branch_nodes(df):
     """
-    
+    Returns the number of branch nodes
     """
     return len(df[df.type == 5])
 
 def get_branch_nodes(df):
     """
-    
+    returns the node id of branch nodes
     """
     return df[df.type == 5]['node_id'].values
 
 def count_end_nodes(df):
     """
-    
+    returns the number of end nodes
     """
     return len(df[df.type == 6])
 
 def get_end_ndoes(df):
     """
-    
+    returns the node ids of end nodes
     """
     return df[df.type == 6]['node_id'].values
 
 def count_segments(df):
     """
-    
+    returns the number of segemnts within the neuron
     """
     return count_branch_nodes(df) + count_end_nodes(df)
 
 def total_cable_length(df):
     """
-    
+    Returns the total cable length of the neuron
     """
     if 'distance' not in df.get_column_names():
         get_distances(df)
-    return sum(df['distance'])
+    return np.sum(df['distance'].values)
 
+def create_graph(df, include_distance = False):
+    """
+    Creates a graph-tool graph from vaex data frame neuron representation
+    """
+    if include_distance:
+        if 'distance' in df.column_names:
+            # generate graph from edge list with distance as an edge property
+            g = gt.Graph([(p-1,c-1,d) for p,c,d in df['parent_id','node_id','distance'].values if p != -1], eprops = [('distance','double')])
+        else:
+            df = get_distances(df)
+            g = gt.Graph([(p-1,c-1,d) for p,c,d in df['parent_id','node_id','distance'].values if p != -1], eprops = [('distance','double')])
+    else:
+        g = gt.Graph([(p-1,c-1) for p,c in df['parent_id','node_id'].values if p != -1])
+
+
+    # initialise vertex properties
+    #radius
+    vprop_rad = g.new_vertex_property('double')
+    # id
+    vprop_id = g.new_vertex_property('int')
+    # node type
+    vprop_type = g.new_vertex_property('int')
+
+    # populate properties
+    ids = g.get_vertices() + 1
+    vprop_id.a = ids
+    vprop_rad.a = df[df.node_id.isin(ids)].radius.values
+    vprop_type.a = df[df.node_id.isin(ids)].type.values
+    vprop_coord = g.new_vertex_property('vector<double>')
+    vprop_coord.set_2d_array(df[df.node_id.isin(ids)]['x','y','z'].values.T)
+
+    # add them to graph
+    g.vp['radius'] = vprop_rad
+    g.vp['ID'] = vprop_id
+    g.vp['type'] = vprop_type
+    g.vp['coordinates'] = vprop_coord
+
+    return g
