@@ -138,8 +138,6 @@ def _vaex_from_swc(file_path, add_distances = False, add_types = True):
     if add_distances == True:
         df = get_distances(df)
     
-
-
     return df
 
 def classify_nodes(df, overwrite = True):
