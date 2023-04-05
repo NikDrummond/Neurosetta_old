@@ -10,7 +10,7 @@ class Neuron_Tree():
     Core Neuron tree class
     """
 
-    __slots__ = ["name","node_table","graph"]
+    __slots__ = ["name","node_table","graph","summary_table"]
 
     def __init__(self, node_table, name = None, graph = None):
 
@@ -32,7 +32,29 @@ class Neuron_Tree():
         else:
             assert isinstance(graph,gt.Graph), "Provided graph is not a Graph-Tool graph"
             self.graph = graph
+
+        self.summary_table = None
     
+    def summary(self):
+        if 'distance' in self.node_table.column_names:
+            summary = vx.from_scalars(name = self.name,
+                                        nodes = _count_nodes(self.node_table),
+                                        branches = _count_branch_nodes(self.node_table),
+                                        ends = _count_end_nodes(self.node_table),
+                                        segments = _count_segs(self.node_table),
+                                        cable_length = _total_cable_length(self.node_table)
+                                        )
+        else:
+            summary = vx.from_scalars(name = self.name,
+                                        nodes = _count_nodes(self.node_table),
+                                        branches = _count_branch_nodes(self.node_table),
+                                        ends = _count_end_nodes(self.node_table),
+                                        segments = _count_segs(self.node_table),
+                                        )
+        self.summary_table = summary
+        return summary
+    
+
     def classify_nodes(self, overwrite = True):
         self.node_table = classify_nodes(self.node_table, overwrite = overwrite)
     
@@ -47,6 +69,8 @@ class Neuron_Tree():
             self.graph = _create_graph(self.node_table, include_distance=include_distance)
         else:
             raise ValueError('Graph already exists for this Neuron')
+        
+    
         
     def count_nodes(self):
         return _count_nodes(self.node_table)
@@ -63,10 +87,12 @@ class Neuron_Tree():
     def get_end_ids(self):
         return _get_end_nodes(self.node_table)
 
-    def count_segments(self):
-        return _count_segments(self.node_table)
+    def count_segs(self):
+        return _count_segs(self.node_table)
 
     def total_cable(self):
+        if 'distance' not in self.node_table.column_names:
+            self.node_table = get_distances(self.node_table)
         return _total_cable_length(self.node_table)
     
     def get_coordinates(self,cols = None):
@@ -241,7 +267,7 @@ def _get_end_nodes(df):
     """
     return df[df.type == 6]['node_id'].values
 
-def _count_segments(df):
+def _count_segs(df):
     """
     returns the number of segemnts within the neuron
     """
