@@ -60,17 +60,18 @@ class Neuron_Tree():
     
     def add_distance(self):
         if 'distance' not in self.node_table.column_names:
-            self.node_table = get_distances(self.node_table)
+            self = get_distances(self)
         else:
-            raise ValueError('distances column already exists')
+            print('distances column already exists')
+        return self
     
     def add_graph(self, include_distance = False):
         if self.graph is None:
             self.graph = _create_graph(self.node_table, include_distance=include_distance)
         else:
             raise ValueError('Graph already exists for this Neuron')
-        
-    
+        return self
+   
         
     def count_nodes(self):
         return _count_nodes(self.node_table)
@@ -92,7 +93,7 @@ class Neuron_Tree():
 
     def total_cable(self):
         if 'distance' not in self.node_table.column_names:
-            self.node_table = get_distances(self.node_table)
+            self = get_distances(self)
         return _total_cable_length(self.node_table)
     
     def get_coordinates(self,cols = None):
@@ -109,7 +110,6 @@ def read_swc(file_path,
     Generate neuron from swc
     """
     df = _vaex_from_swc(file_path,
-                         add_distances=add_distances,
                          add_types=add_types)
     
     if generate_graph == True:
@@ -119,10 +119,15 @@ def read_swc(file_path,
 
     name = os.path.splitext(os.path.basename(file_path))[0]
     
-    return Neuron_Tree(name = name,node_table = df, graph=g)
+    N = Neuron_Tree(name = name,node_table = df, graph=g)
+
+    if add_distances == True:
+        N = get_distances(N)
+
+    return N
 
 
-def _vaex_from_swc(file_path, add_distances = False, add_types = True):
+def _vaex_from_swc(file_path, add_types = True):
     """
     Read in swc file to a vaex DataFrame.
 
@@ -160,9 +165,6 @@ def _vaex_from_swc(file_path, add_distances = False, add_types = True):
 
     if add_types == True:
         df = classify_nodes(df)
-
-    if add_distances == True:
-        df = get_distances(df)
     
     return df
 
@@ -208,7 +210,7 @@ def classify_nodes(df, overwrite = True):
     
     return df
 
-def get_distances(df):
+def get_distances(N):
     """
     Add child to parent distance to Data Frame (in the same units as the coordinate system). Also adds [px,py,pz] columns, which are the parent coordinates for each node.
     if the node is the root, [px,py,pz] = [x,y,z]
@@ -226,16 +228,21 @@ def get_distances(df):
         original DataFrame with added node distances and parent coordinates.
 
     """
-    # root parent
-    rp = df[df.parent_id.isin(np.setdiff1d(df.parent_id.values,df.node_id.values))].parent_id.values[0]
-    # add parent coordinates
-    df['px'] = np.array([df[df.node_id == p]['x'].values[0] if p!= rp else df[df.node_id == c]['x'].values[0] for c,p in df['node_id','parent_id'].values])
-    df['py'] = np.array([df[df.node_id == p]['y'].values[0] if p!= rp else df[df.node_id == c]['y'].values[0] for c,p in df['node_id','parent_id'].values])
-    df['pz'] = np.array([df[df.node_id == p]['z'].values[0] if p!= rp else df[df.node_id == c]['z'].values[0] for c,p in df['node_id','parent_id'].values])
-    # add distances
-    df['distance'] = np.linalg.norm((df.x - df.px,df.y - df.py,df.z - df.pz))  
+
+    ### Generate from the graph
+    if N.graph is None:
+        N.add_graph()
+
+
+    distances = np.zeros(len(N.node_table))
+    nodes = N.node_table['node_id'].values
+    for i in N.graph.iter_edges():
+        dist = np.linalg.norm(N.graph.vp['coordinates'][i[0]].a - N.graph.vp['coordinates'][i[1]].a)
+        distances[np.where(nodes == i[1]+1)[0]] = dist
+
+    N.node_table['distance'] = distances
     
-    return df
+    return N
 
 def _count_nodes(df):
     """
