@@ -3,7 +3,7 @@ import vaex as vx
 import graph_tool.all as gt
 import os
 
-
+### Classes
 
 class Neuron_Tree():
     """
@@ -18,7 +18,7 @@ class Neuron_Tree():
 
         # add name
         if name is None:
-            self.name = None
+            self.name = 'Neuron'
         else:
             assert isinstance(name,str), "Provided neuron name is not a string"
             self.name = name
@@ -28,106 +28,94 @@ class Neuron_Tree():
 
         # add / generate graph
         if graph is None:
-            self.graph = None
+            self.graph = _graph_from_vaex(node_table)
         else:
             assert isinstance(graph,gt.Graph), "Provided graph is not a Graph-Tool graph"
             self.graph = graph
 
         self.summary_table = None
     
+    # Generator functions
     def summary(self):
         if 'distance' in self.node_table.column_names:
             summary = vx.from_scalars(name = self.name,
-                                        nodes = _count_nodes(self.node_table),
-                                        branches = _count_branch_nodes(self.node_table),
-                                        ends = _count_end_nodes(self.node_table),
-                                        segments = _count_segs(self.node_table),
-                                        cable_length = _total_cable_length(self.node_table)
+                                        nodes = _count_nodes(self),
+                                        branches = _count_branch_nodes(self),
+                                        ends = _count_end_nodes(self),
+                                        segments = _count_segs(self),
+                                        cable_length = _total_cable_length(self)
                                         )
         else:
             summary = vx.from_scalars(name = self.name,
-                                        nodes = _count_nodes(self.node_table),
-                                        branches = _count_branch_nodes(self.node_table),
-                                        ends = _count_end_nodes(self.node_table),
-                                        segments = _count_segs(self.node_table),
+                                        nodes = _count_nodes(self),
+                                        branches = _count_branch_nodes(self),
+                                        ends = _count_end_nodes(self),
+                                        segments = _count_segs(self),
                                         )
         self.summary_table = summary
         return summary
     
-
+    # add attribute functions
     def classify_nodes(self, overwrite = True):
-        self.node_table = classify_nodes(self.node_table, overwrite = overwrite)
+
+        return _classify_nodes(self, overwrite = overwrite)
     
     def add_distance(self):
-        if 'distance' not in self.node_table.column_names:
-            self = get_distances(self)
-        else:
-            print('distances column already exists')
-        return self
-    
-    def add_graph(self, include_distance = False):
-        if self.graph is None:
-            self.graph = _create_graph(self.node_table, include_distance=include_distance)
-        else:
-            raise ValueError('Graph already exists for this Neuron')
-        return self
+
+        return _add_distances(self)
    
-        
+    # metric functions
     def count_nodes(self):
-        return _count_nodes(self.node_table)
+        return _count_nodes(self)
 
     def count_branch_nodes(self):
-        return _count_branch_nodes(self.node_table)
+        return _count_branch_nodes(self)
 
     def get_branch_ids(self):
-        return _get_branch_nodes(self.node_table)
+        return _get_branch_nodes(self)
 
     def count_end_nodes(self):
-        return _count_end_nodes(self.node_table)
+        return _count_end_nodes(self)
 
     def get_end_ids(self):
-        return _get_end_nodes(self.node_table)
+        return _get_end_nodes(self)
 
     def count_segs(self):
-        return _count_segs(self.node_table)
+        return _count_segs(self)
 
     def total_cable(self):
         if 'distance' not in self.node_table.column_names:
-            self = get_distances(self)
-        return _total_cable_length(self.node_table)
+            self = _add_distances(self)
+        return _total_cable_length(self)
     
     def get_coordinates(self,cols = None):
         if cols is None:
-            return _get_cols(self.node_table,['x','y','z'])
+            return _get_cols(self,['x','y','z'])
         else:
-            return _get_cols(self.node_table,cols)
+            return _get_cols(self,cols)
+        
+### reading data from file
 
-def read_swc(file_path, 
-             add_distances = False, 
-             add_types = True, 
-             generate_graph = False):
+def read_swc(file_path, add_distances = True, classify_nodes = True):
     """
     Generate neuron from swc
     """
-    df = _vaex_from_swc(file_path,
-                         add_types=add_types)
+    df = _vaex_from_swc(file_path)
     
-    if generate_graph == True:
-        g = _create_graph(df, include_distance=add_distances)
-    else:
-        g = None
+    g = _graph_from_vaex(df)
 
     name = os.path.splitext(os.path.basename(file_path))[0]
     
     N = Neuron_Tree(name = name,node_table = df, graph=g)
 
     if add_distances == True:
-        N = get_distances(N)
+        N.add_distance()
+    if classify_nodes == True:
+        N.classify_nodes()
 
     return N
 
-
-def _vaex_from_swc(file_path, add_types = True):
+def _vaex_from_swc(file_path):
     """
     Read in swc file to a vaex DataFrame.
 
@@ -136,12 +124,6 @@ def _vaex_from_swc(file_path, add_types = True):
 
     file_path:          str
         file path string
-
-    add_distances:      bool
-        If True (default), distance from child to parent will be calculated, add paren x,y,z, and distance columns to the returned data frame
-
-    add_types:          bool
-        if True (default) existing node classification in the swc file will be overwritten, and nodes will be re-classified as root = 1, branch = 5, leaf = 6, other = 0
 
     Returns
     -------
@@ -162,13 +144,43 @@ def _vaex_from_swc(file_path, add_types = True):
                         'parent_id':np.int32})
     if not np.unique(df.node_id.values).size == len(df.node_id.values):
         raise AttributeError('Duplicate Node Ids found')
-
-    if add_types == True:
-        df = classify_nodes(df)
     
     return df
 
-def classify_nodes(df, overwrite = True):
+### Generating bits from memory
+
+def _graph_from_vaex(df):
+    """
+    Creates a graph-tool graph from vaex data frame neuron representation
+    """
+    # edge array
+    edges = df['parent_id','node_id'].values
+    # cut root from edges
+    edges = edges[np.where(edges[:,0] != np.setdiff1d(edges[:,0],edges[:,1])[0])]
+    g = gt.Graph(edges -1)
+
+    # add some attributes which should be in all swc files
+    # initialise vertex ID, coordinates, and radius
+    vprop_rad = g.new_vertex_property('double')
+    vprop_id = g.new_vertex_property('int')
+    vprop_coord = g.new_vertex_property('vector<double>')
+
+    # populate
+    ids = g.get_vertices() + 1
+    vprop_id.a = ids
+    vprop_rad.a = df[df.node_id.isin(ids)].radius.values
+    vprop_coord.set_2d_array(df[df.node_id.isin(ids)]['x','y','z'].values.T)
+
+    # add to graph
+    g.vp['radius'] = vprop_rad
+    g.vp['ID'] = vprop_id
+    g.vp['coordinates'] = vprop_coord
+
+    return g
+
+### Adding attributes
+
+def _classify_nodes(N, overwrite = True):
     """
     Classifies branch, end and root nodes in diven DataFrame. Classifies the root as 1, branches as 5, and end nodes as 6. 
     everything else is set to 0 if overwrite == True
@@ -189,28 +201,31 @@ def classify_nodes(df, overwrite = True):
         Original dataframe with updated node types
     """
     if overwrite == True:
-        df['type'] = df.func.where(df.type != np.int32(0), np.int32(0), df.type)
+        N.node_table['type'] = N.node_table.func.where(N.node_table.type != np.int32(0), np.int32(0), N.node_table.type)
+        
 
-    # ends
-    e = df[df.node_id.isin(np.setdiff1d(df.node_id.values,df.parent_id.values))].node_id.values
-    df['type']= df.func.where(df.node_id.isin(e),6,df.type)
+    # types
+    out_deg = N.graph.get_out_degrees(N.graph.get_vertices())
+    in_deg = N.graph.get_in_degrees(N.graph.get_vertices())
+    ends = np.where(out_deg == 0)
+    branches = np.where(out_deg > 1)
+    root = np.where(in_deg == 0)
+    node_types = np.zeros_like(N.graph.get_vertices())
+    node_types[ends] = 6
+    node_types[branches] = 5
+    node_types[root] = 1
+    N.node_table['type'] = node_types
 
-    # root
-    r = df[df.parent_id.isin(np.setdiff1d(df.parent_id.values,df.node_id.values))].node_id.values
-    # if the parent of the root node is not -1, update it
-    if df[df.node_id == r].parent_id.values != -1:
-        df['parent_id'] = df.func.where(df.node_id.isin(r),-1,df.parent_id)
-    df['type']= df.func.where(df.node_id.isin(r),1,df.type)
-
-
-    # branches
-    b = np.sort(df.parent_id.values)
-    b = np.unique(b[:-1][b[1:] == b[:-1]])
-    df['type']= df.func.where(df.node_id.isin(b),5,df.type)
+    # initialise type property
+    vprop_type = N.graph.new_vertex_property('int')
+    # populate
+    vprop_type.a = node_types
+    # add to graph
+    N.graph.vp['type'] = vprop_type
     
-    return df
+    return N
 
-def get_distances(N):
+def _add_distances(N):
     """
     Add child to parent distance to Data Frame (in the same units as the coordinate system). Also adds [px,py,pz] columns, which are the parent coordinates for each node.
     if the node is the root, [px,py,pz] = [x,y,z]
@@ -229,11 +244,7 @@ def get_distances(N):
 
     """
 
-    ### Generate from the graph
-    if N.graph is None:
-        N.add_graph()
-
-
+    # distances
     distances = np.zeros(len(N.node_table))
     nodes = N.node_table['node_id'].values
     for i in N.graph.iter_edges():
@@ -241,98 +252,70 @@ def get_distances(N):
         distances[np.where(nodes == i[1]+1)[0]] = dist
 
     N.node_table['distance'] = distances
+
+    # add distance property to edges - need to remove 0
+    distances = distances[np.where(distances != 0)]
+
+    eprop_dist = N.graph.new_edge_property('double')
+    eprop_dist.a = distances
+    N.graph.ep['distance'] = eprop_dist
     
     return N
 
-def _count_nodes(df):
+### metrics
+
+def _count_nodes(N):
     """
     Returns the number of nodes in the neuron
     """
-    return len(df)
+    return len(N.node_table)
 
-def _count_branch_nodes(df):
+def _count_branch_nodes(N):
     """
     Returns the number of branch nodes
     """
-    return len(df[df.type == 5])
+    return len(N.node_table[N.node_table.type == 5])
 
-def _get_branch_nodes(df):
+def _get_branch_nodes(N):
     """
     returns the node id of branch nodes
     """
-    return df[df.type == 5]['node_id'].values
+    return N.node_table[N.node_table.type == 5]['node_id'].values
 
-def _count_end_nodes(df):
+def _count_end_nodes(N):
     """
     returns the number of end nodes
     """
-    return len(df[df.type == 6])
+    return len(N.node_table[N.node_table.type == 6])
 
-def _get_end_nodes(df):
+def _get_end_nodes(N):
     """
     returns the node ids of end nodes
     """
-    return df[df.type == 6]['node_id'].values
+    return N.node_table[N.node_table.type == 6]['node_id'].values
 
-def _count_segs(df):
+def _count_segs(N):
     """
     returns the number of segemnts within the neuron
     """
-    return _count_branch_nodes(df) + _count_end_nodes(df)
+    return _count_branch_nodes(N) + _count_end_nodes(N)
 
-def _total_cable_length(df):
+def _total_cable_length(N):
     """
     Returns the total cable length of the neuron
     """
-    if 'distance' not in df.get_column_names():
-        get_distances(df)
-    return np.sum(df['distance'].values)
+    if 'distance' not in N.node_table.get_column_names():
+        print('Distances not available - add distances')
+    return np.sum(N.node_table['distance'].values)
 
-def _get_cols(df,cols = None):
+def _get_cols(N,cols = None):
     """
     returns np.array of specified columns in node table
     """
     if cols is None:
         raise AttributeError('please provide a list of columns you wish to return')
     else:
-        return df[cols].values
-
-def _create_graph(df, include_distance = False):
-    """
-    Creates a graph-tool graph from vaex data frame neuron representation
-    """
-    if include_distance:
-        if 'distance' in df.column_names:
-            # generate graph from edge list with distance as an edge property
-            g = gt.Graph([(p-1,c-1,d) for p,c,d in df['parent_id','node_id','distance'].values if p != -1], eprops = [('distance','double')])
-        else:
-            df = get_distances(df)
-            g = gt.Graph([(p-1,c-1,d) for p,c,d in df['parent_id','node_id','distance'].values if p != -1], eprops = [('distance','double')])
-    else:
-        g = gt.Graph([(p-1,c-1) for p,c in df['parent_id','node_id'].values if p != -1])
+        return N.node_table[cols].values
 
 
-    # initialise vertex properties
-    #radius
-    vprop_rad = g.new_vertex_property('double')
-    # id
-    vprop_id = g.new_vertex_property('int')
-    # node type
-    vprop_type = g.new_vertex_property('int')
-
-    # populate properties
-    ids = g.get_vertices() + 1
-    vprop_id.a = ids
-    vprop_rad.a = df[df.node_id.isin(ids)].radius.values
-    vprop_type.a = df[df.node_id.isin(ids)].type.values
-    vprop_coord = g.new_vertex_property('vector<double>')
-    vprop_coord.set_2d_array(df[df.node_id.isin(ids)]['x','y','z'].values.T)
-
-    # add them to graph
-    g.vp['radius'] = vprop_rad
-    g.vp['ID'] = vprop_id
-    g.vp['type'] = vprop_type
-    g.vp['coordinates'] = vprop_coord
-
-    return g
 
