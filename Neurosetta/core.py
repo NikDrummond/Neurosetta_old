@@ -10,7 +10,7 @@ class Neuron_Tree():
     Core Neuron tree class
     """
 
-    __slots__ = ["name","node_table","graph","summary_table"]
+    __slots__ = ["name","node_table","graph","summary_table", 'id_map']
 
     def __init__(self, node_table, name = None, graph = None):
 
@@ -100,19 +100,24 @@ def read_swc(file_path, add_distances = True, classify_nodes = True):
     """
     Generate neuron from swc
     """
+    # neuron class inputs
     df = _vaex_from_swc(file_path)
     
-    g = _graph_from_vaex(df)
+    g, id_map = _graph_from_vaex(df)
 
     name = os.path.splitext(os.path.basename(file_path))[0]
-    
+    # generate neurons
     N = Neuron_Tree(name = name,node_table = df, graph=g)
+    # add graph node - swc table look up
+    N.id_map = id_map
 
     if add_distances == True:
         N.add_distance()
     if classify_nodes == True:
         N.classify_nodes()
 
+    
+    
     return N
 
 def _vaex_from_swc(file_path):
@@ -155,9 +160,15 @@ def _graph_from_vaex(df):
     """
     # edge array
     edges = df['parent_id','node_id'].values
+
+    # id_map
+    id_map = [i for i in enumerate(df.node_id.values)]
+    for i in id_map:
+        edges[edges == i[1]] = i[0]
+
     # cut root from edges
     edges = edges[np.where(edges[:,0] != np.setdiff1d(edges[:,0],edges[:,1])[0])]
-    g = gt.Graph(edges -1)
+    g = gt.Graph(edges)
 
     # add some attributes which should be in all swc files
     # initialise vertex ID, coordinates, and radius
@@ -166,7 +177,7 @@ def _graph_from_vaex(df):
     vprop_coord = g.new_vertex_property('vector<double>')
 
     # populate
-    ids = g.get_vertices() + 1
+    ids = np.asarray(id_map)[:,1]
     vprop_id.a = ids
     vprop_rad.a = df[df.node_id.isin(ids)].radius.values
     vprop_coord.set_2d_array(df[df.node_id.isin(ids)]['x','y','z'].values.T)
@@ -176,7 +187,7 @@ def _graph_from_vaex(df):
     g.vp['ID'] = vprop_id
     g.vp['coordinates'] = vprop_coord
 
-    return g
+    return g, np.asarray(id_map)
 
 ### Adding attributes
 
@@ -247,9 +258,11 @@ def _add_distances(N):
     # distances
     distances = np.zeros(len(N.node_table))
     nodes = N.node_table['node_id'].values
+    
     for i in N.graph.iter_edges():
         dist = np.linalg.norm(N.graph.vp['coordinates'][i[0]].a - N.graph.vp['coordinates'][i[1]].a)
-        distances[np.where(nodes == i[1]+1)[0]] = dist
+        child_n = N.id_map[np.where(N.id_map[:,0] == i[1])][0][1]
+        distances[np.where(nodes == child_n)[0]] = dist
 
     N.node_table['distance'] = distances
 
@@ -319,3 +332,10 @@ def _get_cols(N,cols = None):
 
 
 
+### Temp functions which need to be fleshed out 
+
+def Neuron_list(path):
+    """
+    Return a list of neuron objects
+    """
+    Ns = []
