@@ -28,7 +28,7 @@ class Neuron_Tree():
 
         # add / generate graph
         if graph is None:
-            self.graph = _graph_from_vaex(node_table)
+            self.graph = graph_from_vaex(node_table)
         else:
             assert isinstance(graph,gt.Graph), "Provided graph is not a Graph-Tool graph"
             self.graph = graph
@@ -104,9 +104,9 @@ def read_swc(file_path, add_distances = True, classify_nodes = True):
     Generate neuron from swc
     """
     # neuron class inputs
-    df = _vaex_from_swc(file_path)
+    df = vaex_from_swc(file_path)
     
-    g = _graph_from_vaex(df)
+    g = graph_from_vaex(df)
 
     name = os.path.splitext(os.path.basename(file_path))[0]
     # generate neuron
@@ -121,7 +121,7 @@ def read_swc(file_path, add_distances = True, classify_nodes = True):
     
     return N
 
-def _vaex_from_swc(file_path):
+def vaex_from_swc(file_path):
     """
     Read in swc file to a vaex DataFrame.
 
@@ -155,7 +155,7 @@ def _vaex_from_swc(file_path):
 
 ### Generating bits from memory
 
-def _graph_from_vaex(df):
+def graph_from_vaex(df):
     """
     Creates a graph-tool graph from vaex data frame neuron representation
     """
@@ -178,6 +178,9 @@ def _graph_from_vaex(df):
     # add to graph
     g.vp['radius'] = vprop_rad
     g.vp['coordinates'] = vprop_coord
+
+    # add total degree property map
+    g.vp['degree_total'] = g.degree_property_map("total")
 
     return g
 
