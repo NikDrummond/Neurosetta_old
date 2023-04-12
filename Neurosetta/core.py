@@ -10,7 +10,7 @@ class Neuron_Tree():
     Core Neuron tree class
     """
 
-    __slots__ = ["name","node_table","graph","summary_table", 'id_map']
+    __slots__ = ["name","node_table","graph","summary_table"]
 
     def __init__(self, node_table, name = None, graph = None):
 
@@ -83,6 +83,9 @@ class Neuron_Tree():
     def count_segs(self):
         return _count_segs(self)
 
+    def get_root_id(self):
+        return _get_root_id(self)
+
     def total_cable(self):
         if 'distance' not in self.node_table.column_names:
             self = _add_distances(self)
@@ -103,13 +106,11 @@ def read_swc(file_path, add_distances = True, classify_nodes = True):
     # neuron class inputs
     df = _vaex_from_swc(file_path)
     
-    g, id_map = _graph_from_vaex(df)
+    g = _graph_from_vaex(df)
 
     name = os.path.splitext(os.path.basename(file_path))[0]
-    # generate neurons
+    # generate neuron
     N = Neuron_Tree(name = name,node_table = df, graph=g)
-    # add graph node - swc table look up
-    N.id_map = id_map
 
     if add_distances == True:
         N.add_distance()
@@ -159,35 +160,26 @@ def _graph_from_vaex(df):
     Creates a graph-tool graph from vaex data frame neuron representation
     """
     # edge array
-    edges = df['parent_id','node_id'].values
-
-    # id_map
-    id_map = [i for i in enumerate(df.node_id.values)]
-    for i in id_map:
-        edges[edges == i[1]] = i[0]
+    edges = df['parent_id','node_id'].values.astype(int)
 
     # cut root from edges
     edges = edges[np.where(edges[:,0] != np.setdiff1d(edges[:,0],edges[:,1])[0])]
-    g = gt.Graph(edges)
+
+    g = gt.Graph(edges, hashed = True, hash_type = 'int')
 
     # add some attributes which should be in all swc files
     # initialise vertex ID, coordinates, and radius
     vprop_rad = g.new_vertex_property('double')
-    vprop_id = g.new_vertex_property('int')
     vprop_coord = g.new_vertex_property('vector<double>')
 
-    # populate
-    ids = np.asarray(id_map)[:,1]
-    vprop_id.a = ids
-    vprop_rad.a = df[df.node_id.isin(ids)].radius.values
-    vprop_coord.set_2d_array(df[df.node_id.isin(ids)]['x','y','z'].values.T)
+    vprop_rad.a = df.radius.values
+    vprop_coord.set_2d_array(df['x','y','z'].values.T)
 
     # add to graph
     g.vp['radius'] = vprop_rad
-    g.vp['ID'] = vprop_id
     g.vp['coordinates'] = vprop_coord
 
-    return g, np.asarray(id_map)
+    return g
 
 ### Adding attributes
 
@@ -261,8 +253,7 @@ def _add_distances(N):
     
     for i in N.graph.iter_edges():
         dist = np.linalg.norm(N.graph.vp['coordinates'][i[0]].a - N.graph.vp['coordinates'][i[1]].a)
-        child_n = N.id_map[np.where(N.id_map[:,0] == i[1])][0][1]
-        distances[np.where(nodes == child_n)[0]] = dist
+        distances[np.where(nodes == N.graph.vp['ids'][i[1]])[0]] = dist
 
     N.node_table['distance'] = distances
 
@@ -312,6 +303,12 @@ def _count_segs(N):
     returns the number of segemnts within the neuron
     """
     return _count_branch_nodes(N) + _count_end_nodes(N)
+
+def _get_root_id(N):
+    """ 
+    returns the node id of the root
+    """
+    return N.node_table[N.node_table.type == 1]['node_id'].values[0]
 
 def _total_cable_length(N):
     """
