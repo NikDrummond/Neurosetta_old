@@ -112,10 +112,10 @@ def read_swc(file_path, add_distances = True, classify_nodes = True):
     # generate neuron
     N = Neuron_Tree(name = name,node_table = df, graph=g)
 
-    if add_distances == True:
-        N.add_distance()
     if classify_nodes == True:
         N.classify_nodes()
+    if add_distances == True:
+        N.add_distance()
 
     
     
@@ -253,6 +253,7 @@ def _add_distances(N):
     # distances
     distances = np.zeros(len(N.node_table))
     nodes = N.node_table['node_id'].values
+    r = N.get_root_id()
     
     for i in N.graph.iter_edges():
         dist = np.linalg.norm(N.graph.vp['coordinates'][i[0]].a - N.graph.vp['coordinates'][i[1]].a)
@@ -261,7 +262,7 @@ def _add_distances(N):
     N.node_table['distance'] = distances
 
     # add distance property to edges - need to remove 0
-    distances = distances[np.where(distances != 0)]
+    distances = distances[np.where(nodes != r)]
 
     eprop_dist = N.graph.new_edge_property('double')
     eprop_dist.a = distances
