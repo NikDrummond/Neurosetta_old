@@ -1,50 +1,7 @@
 from .core import *
 import graph_tool.all as gt
 
-def classify_segments(N):
-    """
-    Given a neuron, add segment IDs to graph
-    """
-    g = N.graph.copy()
-
-    # initialise segement and seen children properties
-    segment = g.new_vp('int')
-    seen_children = g.new_vp('int')
-    edge_segment = g.new_ep('int')
-
-    segment_count = 1
-
-    for e in gt.bfs_iterator(g,g.vertex(0)):
-
-        # if we are at the root (total degree = 1)
-        if g.vp['degree_total'][e.source()] == 1:
-            segment[e.source()] = segment_count
-            segment[e.target()] = segment_count
-            seen_children[e.source()] = 1
-
-            edge_segment[e] = segment[e.target()]
-
-        # or otherwise this is a transitive node and adopts parent segment
-        elif g.vp['degree_total'][e.source()] == 2:
-            segment[e.target()] = segment[e.source()]
-            seen_children[e.target()] = 1
-            edge_segment[e] = segment[e.target()]
-
-        elif g.vp['degree_total'][e.source()] > 2:
-
-            # we are adding new segment!
-            segment_count += 1
-
-            segment[e.target()] = segment_count
-            seen_children[e.source()] = seen_children[e.source()] + 1 
-
-            edge_segment[e] = segment[e.target()]
-
-    g.ep['segment'] = edge_segment
-
-    N.graph = g
-
-    return N
+### Modifying whole neurons
 
 def simplify_N(N):
     # given neurons (N) return simplified version
@@ -131,3 +88,81 @@ def simplify_N(N):
     N2.add_distance()
 
     return N2
+
+
+### Node attributes
+
+def classify_segments(N):
+    """
+    Given a neuron, add segment IDs to graph
+    """
+    g = N.graph.copy()
+
+    # initialise segement and seen children properties
+    segment = g.new_vp('int')
+    seen_children = g.new_vp('int')
+    edge_segment = g.new_ep('int')
+
+    segment_count = 1
+
+    for e in gt.bfs_iterator(g,g.vertex(0)):
+
+        # if we are at the root (total degree = 1)
+        if g.vp['degree_total'][e.source()] == 1:
+            segment[e.source()] = segment_count
+            segment[e.target()] = segment_count
+            seen_children[e.source()] = 1
+
+            edge_segment[e] = segment[e.target()]
+
+        # or otherwise this is a transitive node and adopts parent segment
+        elif g.vp['degree_total'][e.source()] == 2:
+            segment[e.target()] = segment[e.source()]
+            seen_children[e.target()] = 1
+            edge_segment[e] = segment[e.target()]
+
+        elif g.vp['degree_total'][e.source()] > 2:
+
+            # we are adding new segment!
+            segment_count += 1
+
+            segment[e.target()] = segment_count
+            seen_children[e.source()] = seen_children[e.source()] + 1 
+
+            edge_segment[e] = segment[e.target()]
+
+    g.ep['segment'] = edge_segment
+
+    N.graph = g
+
+    return N
+
+def node_height(N):
+    """
+    Add height
+    """
+
+    # initialise vertex property
+    height = N.graph.new_vp('int')
+
+    for e in gt.dfs_iterator(N.graph,N.graph.vertex(0)):
+
+        # if root
+        if N.graph.vp['degree_total'][e.source()] == 1:
+            height[e.source()] = 0
+
+        # if target is a slab or a leaf:
+        if N.graph.vp['degree_total'][e.target()] == 2:
+            height[e.target()] = height[e.source()]
+        elif (N.graph.vp['degree_total'][e.target()] > 2) | (N.graph.vp['degree_total'][e.target()] == 1):
+            height[e.target()] = height[e.source()] + 1
+
+    N.graph.vp['height'] = height
+
+def edge_contraction(N):
+    """
+    adds the euclidean distance / path length as an edge property
+    """
+    contraction = N.graph.new_ep('double')
+    contraction.a = N.graph.ep['distance'].a / N.graph.ep['path_length'].a
+    N.graph.ep['edge_contraction'] = contraction
