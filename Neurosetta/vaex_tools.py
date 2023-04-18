@@ -14,3 +14,16 @@ def forest_df(neurons):
         dfs.append(df_tmp)
 
     return vx.concat(dfs)
+
+def forest_summary(df):
+    """
+    Given df of multiple neurons, produce summary table
+    """
+    # df_forest summary
+    fs = df.groupby(by = 'N_id').agg({'nodes':'count',
+                                        'branches':vx.agg.count('type',selection=('type == 5')),
+                                        'ends':vx.agg.count('type',selection=('type == 6')),
+                                        'cable_length': vx.agg.sum('path_length')}).copy()
+    fs['segments'] = fs['branches'] + fs['ends']
+
+    return fs

@@ -1,6 +1,7 @@
 import numpy as np
 import vaex as vx
 import graph_tool.all as gt
+from tqdm import tqdm
 import os
 
 ### Classes
@@ -99,26 +100,46 @@ class Neuron_Tree():
         
 ### reading data from file
 
-def read_swc(file_path, add_distances = True, classify_nodes = True):
+def read_swc(path, add_distances = True, classify_nodes = True):
     """
-    Generate neuron from swc
+    Generate neuron from swc, file or directory
     """
-    # neuron class inputs
-    df = vaex_from_swc(file_path)
-    
-    g = graph_from_vaex(df)
 
-    name = os.path.splitext(os.path.basename(file_path))[0]
-    # generate neuron
-    N = Neuron_Tree(name = name,node_table = df, graph=g)
+    # if single file is given
+    if os.path.isfile(path):
+        # neuron class inputs
+        df = vaex_from_swc(path)
+        
+        g = graph_from_vaex(df)
 
-    if classify_nodes == True:
-        N.classify_nodes()
-    if add_distances == True:
-        N.add_distance()
+        name = os.path.splitext(os.path.basename(path))[0]
+        # generate neuron
+        N = Neuron_Tree(name = name,node_table = df, graph=g)
 
+        if classify_nodes == True:
+            N.classify_nodes()
+        if add_distances == True:
+            N.add_distance()
+
+    # if a directory is given
+    elif os.path.isdir(path):
     
-    
+        N = []
+        for root, dirs, files in os.walk(path):
+            for file in tqdm(files, desc = 'Reading Neurons: '):
+                if file.endswith('.swc'):
+                    df = vaex_from_swc(os.path.join(root,file))
+                    g = graph_from_vaex(df)
+
+                    name = os.path.splitext(os.path.basename(path))[0]
+                    # generate neuron
+                    n = Neuron_Tree(name = name,node_table = df, graph=g)
+                    
+                    if classify_nodes == True:
+                        n.classify_nodes()
+                    if add_distances == True:
+                        n.add_distance()
+                    N.append(n)
     return N
 
 def vaex_from_swc(file_path):
@@ -333,10 +354,4 @@ def _get_cols(N,cols = None):
 
 
 
-### Temp functions which need to be fleshed out 
-
-def Neuron_list(path):
-    """
-    Return a list of neuron objects
-    """
-    Ns = []
+### Temp functions which need to be fleshed out

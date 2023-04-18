@@ -73,8 +73,6 @@ def simplify_N(N):
             i += 1
 
     # create subset data frame
-    # add root to edges
-    edges = np.vstack(([-1,1],edges))
     node_id = edges[:,1]
     parent_id = edges[:,0]
 
