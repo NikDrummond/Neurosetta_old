@@ -131,7 +131,7 @@ def read_swc(path, add_distances = True, classify_nodes = True):
                     df = vaex_from_swc(os.path.join(root,file))
                     g = graph_from_vaex(df)
 
-                    name = os.path.splitext(os.path.basename(path))[0]
+                    name = os.path.splitext(file)[0]
                     # generate neuron
                     n = Neuron_Tree(name = name,node_table = df, graph=g)
                     
