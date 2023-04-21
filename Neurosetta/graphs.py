@@ -1,5 +1,6 @@
 from .core import *
 import graph_tool.all as gt
+from itertools import combinations
 
 ### Modifying whole neurons
 
@@ -166,3 +167,59 @@ def edge_contraction(N):
     contraction = N.graph.new_ep('double')
     contraction.a = N.graph.ep['distance'].a / N.graph.ep['path_length'].a
     N.graph.ep['edge_contraction'] = contraction
+
+def node_asymmetry(N):
+    """
+    Adds node asymmetry as a vp
+    """
+    # copy graph and make undirected so we can get leaf - root paths
+    g = N.graph.copy()
+    g.set_directed(False)
+
+    # add reachable leaves property to nodes
+    reachable_leaves = N.graph.new_vp('int')
+
+    # out degrees
+    out_deg = N.graph.get_out_degrees(N.graph.get_vertices())
+    # leaf inds
+    l_inds = np.where(out_deg == 0)[0]
+    # root ind
+    root = np.where(N.graph.get_in_degrees(N.graph.get_vertices()) == 0)
+    root = N.graph.vertex(root[0])
+    # initialise array we will count reachable leaves in
+
+    # loop through ends, add one to node if it is in the path from a leaf
+    for l in l_inds:
+        vertex, edges = gt.shortest_path(g, N.graph.vertex(l), root)
+        for v in vertex:
+            reachable_leaves[v] = reachable_leaves[v] + 1
+
+    # add reachable leave property to original graph
+
+    # loop through branches
+    b_inds = np.where(out_deg >= 2)[0]
+
+    # initialise assymetry property
+    asymmetry = N.graph.new_vp('double')
+
+    # loop over them
+
+    for b in b_inds:
+        current_b = N.graph.vertex(b)
+        children = N.graph.get_out_neighbors(current_b)
+        asymmetry[current_b] = np.mean([_node_assymetry(reachable_leaves[N.graph.vertex(N.graph.vertex(pair[0]))],reachable_leaves[N.graph.vertex(N.graph.vertex(pair[1]))]) 
+                    for pair in combinations(children,2)])
+
+    N.graph.vp['partition_asymmetry'] = asymmetry
+
+def _node_assymetry(t1,t2):
+    """
+    Calculates node asymmetry
+    """
+    diff = abs(t1 - t2)
+    div = (t1 + t2) - 2
+
+    if diff == 0:
+        return 0
+    else:
+        return diff / div
