@@ -141,8 +141,14 @@ def snap_to_axis(coords, error_tol = 0.0000001, return_theta = False):
     
     
     """
+    # make sure coords are the right shape:
+    if 3 in coords.shape:
+        if coords.shape[0] != 3:
+            coords = coords.T
+    else:
+        raise AttributeError('Input coordinates are not 3 dimensional')
     ### Rotation - Yaw, Pitch, and Roll
-    evals,evects = coords_Eig(coords.T)
+    evals,evects = coords_Eig(coords)
 
     theta1, theta2, theta3 = eig_axis_eulers(evects)
 

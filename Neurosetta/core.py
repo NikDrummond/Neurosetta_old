@@ -98,6 +98,14 @@ class Neuron_Tree():
         else:
             return _get_cols(self,cols)
         
+    # output formats
+    def to_navis_df(self):
+        """
+        Return a navis style pandas dataframe
+        """
+        df = self.node_table[['node_id','type','x','y','z','radius','parent_id']].to_pandas_df()
+        return df
+        
 ### reading data from file
 
 def read_swc(path, add_distances = True, classify_nodes = True):
